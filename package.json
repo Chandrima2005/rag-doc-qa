@@ -4,6 +4,6 @@
   "description": "RAG-based Document Q&A app using OpenAI embeddings + Netlify Blobs as a vector store",
   "private": true,
   "dependencies": {
-    "@netlify/blobs": "^7.4.0"
+    "@netlify/blobs": "^8.2.0"
   }
 }
