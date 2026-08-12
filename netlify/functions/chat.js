@@ -4,7 +4,7 @@ const { embedTexts, topKChunks } = require("./utils");
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const CHAT_MODEL = "gemini-2.5-flash";
 
-exports.handler = async (event) => {
+exports.handler = async (event, context) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method not allowed" };
   }
@@ -20,7 +20,18 @@ exports.handler = async (event) => {
       return { statusCode: 500, body: JSON.stringify({ error: "GEMINI_API_KEY is not set in Netlify env vars." }) };
     }
 
-    const store = getStore("rag-docs");
+    const blobsToken = process.env.NETLIFY_BLOBS_TOKEN;
+    const siteID = process.env.NETLIFY_SITE_ID || (context.site && context.site.id);
+    if (!blobsToken || !siteID) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          error: "Blobs is not configured. Set NETLIFY_BLOBS_TOKEN and NETLIFY_SITE_ID in Netlify env vars.",
+        }),
+      };
+    }
+
+    const store = getStore({ name: "rag-docs", siteID, token: blobsToken });
     const doc = await store.get("current-doc.json", { type: "json" });
     if (!doc || !doc.chunks || doc.chunks.length === 0) {
       return { statusCode: 400, body: JSON.stringify({ error: "No document uploaded yet." }) };
@@ -28,7 +39,7 @@ exports.handler = async (event) => {
 
     const [queryEmbedding] = await embedTexts([question], apiKey);
     const relevant = topKChunks(queryEmbedding, doc.chunks, 4);
-    const context = relevant.map((c, i) => `[Excerpt ${i + 1}]\n${c.content}`).join("\n\n");
+    const excerptContext = relevant.map((c, i) => `[Excerpt ${i + 1}]\n${c.content}`).join("\n\n");
 
     const systemPrompt =
       "You are a helpful assistant answering questions about a specific document. " +
@@ -44,7 +55,7 @@ exports.handler = async (event) => {
           contents: [
             {
               role: "user",
-              parts: [{ text: `Document excerpts:\n\n${context}\n\nQuestion: ${question}` }],
+              parts: [{ text: `Document excerpts:\n\n${excerptContext}\n\nQuestion: ${question}` }],
             },
           ],
           generationConfig: { temperature: 0.2 },
