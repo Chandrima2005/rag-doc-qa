@@ -1,7 +1,7 @@
 const { getStore } = require("@netlify/blobs");
 const { chunkText, embedTexts } = require("./utils");
 
-exports.handler = async (event) => {
+exports.handler = async (event, context) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method not allowed" };
   }
@@ -17,8 +17,18 @@ exports.handler = async (event) => {
       return { statusCode: 500, body: JSON.stringify({ error: "GEMINI_API_KEY is not set in Netlify env vars." }) };
     }
 
+    const blobsToken = process.env.NETLIFY_BLOBS_TOKEN;
+    const siteID = process.env.NETLIFY_SITE_ID || (context.site && context.site.id);
+    if (!blobsToken || !siteID) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          error: "Blobs is not configured. Set NETLIFY_BLOBS_TOKEN and NETLIFY_SITE_ID in Netlify env vars.",
+        }),
+      };
+    }
+
     const rawChunks = chunkText(text);
-    // Gemini's batchEmbedContents accepts many requests per call; keep batches modest to be safe.
     const BATCH = 50;
     const chunks = [];
     for (let i = 0; i < rawChunks.length; i += BATCH) {
@@ -27,8 +37,7 @@ exports.handler = async (event) => {
       batch.forEach((content, j) => chunks.push({ content, embedding: embeddings[j] }));
     }
 
-    const store = getStore("rag-docs");
-    // Single-document demo store: each new upload replaces the previous doc.
+    const store = getStore({ name: "rag-docs", siteID, token: blobsToken });
     await store.setJSON("current-doc.json", {
       filename: filename || "document",
       uploadedAt: new Date().toISOString(),
