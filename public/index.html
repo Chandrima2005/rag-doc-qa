@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RAG Document Q&A</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e37;
+    --text: #e7e9ee;
+    --muted: #9aa1ad;
+    --accent: #6c8cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    padding: 40px 16px;
+  }
+  .app {
+    width: 100%;
+    max-width: 720px;
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: 4px;
+  }
+  p.sub {
+    color: var(--muted);
+    margin-top: 0;
+    margin-bottom: 28px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .panel h2 {
+    font-size: 1rem;
+    margin: 0 0 12px 0;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  input[type="file"] {
+    color: var(--text);
+  }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    margin-left: 10px;
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  #status { margin-top: 12px; font-size: 0.85rem; color: var(--muted); }
+  #chatLog {
+    max-height: 380px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .msg {
+    padding: 10px 14px;
+    border-radius: 10px;
+    max-width: 85%;
+    line-height: 1.4;
+    font-size: 0.92rem;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--accent);
+    color: white;
+  }
+  .msg.bot {
+    align-self: flex-start;
+    background: #1f232c;
+    border: 1px solid var(--border);
+  }
+  .chat-input {
+    display: flex;
+  }
+  .chat-input input {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #0f1115;
+    color: var(--text);
+    font-size: 0.9rem;
+  }
+  .sources {
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>📄 RAG Document Q&A</h1>
+  <p class="sub">Upload a PDF, then ask questions about its contents.</p>
+
+  <div class="panel">
+    <h2>1. Upload document</h2>
+    <input type="file" id="fileInput" accept="application/pdf" />
+    <button id="uploadBtn">Process</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="panel">
+    <h2>2. Ask questions</h2>
+    <div id="chatLog"></div>
+    <div class="chat-input">
+      <input id="questionInput" type="text" placeholder="Ask something about the document..." disabled />
+      <button id="askBtn" disabled>Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+  const fileInput = document.getElementById("fileInput");
+  const uploadBtn = document.getElementById("uploadBtn");
+  const statusEl = document.getElementById("status");
+  const chatLog = document.getElementById("chatLog");
+  const questionInput = document.getElementById("questionInput");
+  const askBtn = document.getElementById("askBtn");
+
+  async function extractPdfText(file) {
+    const buffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    let fullText = "";
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      fullText += content.items.map((it) => it.str).join(" ") + "\n";
+    }
+    return fullText;
+  }
+
+  uploadBtn.addEventListener("click", async () => {
+    const file = fileInput.files[0];
+    if (!file) {
+      statusEl.textContent = "Please choose a PDF file first.";
+      return;
+    }
+    uploadBtn.disabled = true;
+    statusEl.textContent = "Extracting text from PDF...";
+
+    try {
+      const text = await extractPdfText(file);
+      statusEl.textContent = "Embedding and indexing document...";
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, filename: file.name }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+
+      statusEl.textContent = `Indexed "${data.filename}" into ${data.chunkCount} chunks. Ready to chat!`;
+      questionInput.disabled = false;
+      askBtn.disabled = false;
+    } catch (err) {
+      statusEl.textContent = "Error: " + err.message;
+    } finally {
+      uploadBtn.disabled = false;
+    }
+  });
+
+  function addMessage(text, sender) {
+    const div = document.createElement("div");
+    div.className = "msg " + sender;
+    div.textContent = text;
+    chatLog.appendChild(div);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return div;
+  }
+
+  async function askQuestion() {
+    const question = questionInput.value.trim();
+    if (!question) return;
+    addMessage(question, "user");
+    questionInput.value = "";
+    askBtn.disabled = true;
+
+    const thinking = addMessage("Thinking...", "bot");
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Request failed");
+
+      thinking.textContent = data.answer;
+      if (data.sources && data.sources.length) {
+        const src = document.createElement("div");
+        src.className = "sources";
+        src.textContent =
+          "Sources: " + data.sources.map((s) => `(${(s.score * 100).toFixed(0)}% match)`).join(", ");
+        thinking.appendChild(src);
+      }
+    } catch (err) {
+      thinking.textContent = "Error: " + err.message;
+    } finally {
+      askBtn.disabled = false;
+    }
+  }
+
+  askBtn.addEventListener("click", askQuestion);
+  questionInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") askQuestion();
+  });
+</script>
+</body>
+</html>
