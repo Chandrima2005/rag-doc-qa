@@ -2,7 +2,7 @@ const { getStore } = require("@netlify/blobs");
 const { embedTexts, topKChunks } = require("./utils");
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const CHAT_MODEL = "gemini-2.5-flash";
+const CHAT_MODEL = "gemini-3.5-flash-lite";
 
 exports.handler = async (event, context) => {
   if (event.httpMethod !== "POST") {
