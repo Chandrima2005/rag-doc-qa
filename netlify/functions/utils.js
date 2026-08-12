@@ -1,5 +1,5 @@
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const EMBED_MODEL = "text-embedding-004";
+const EMBED_MODEL = "gemini-embedding-001";
 
 // Split raw text into overlapping word chunks so each chunk keeps some
 // context from the one before it (helps retrieval quality at chunk edges).
