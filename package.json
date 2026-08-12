@@ -1,0 +1,9 @@
+{
+  "name": "rag-doc-qa",
+  "version": "1.0.0",
+  "description": "RAG-based Document Q&A app using OpenAI embeddings + Netlify Blobs as a vector store",
+  "private": true,
+  "dependencies": {
+    "@netlify/blobs": "^7.4.0"
+  }
+}
