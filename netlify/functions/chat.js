@@ -43,7 +43,9 @@ exports.handler = async (event, context) => {
 
     const systemPrompt =
       "You are a helpful assistant answering questions about a specific document. " +
-      "Only use the provided excerpts to answer. If the answer isn't in the excerpts, say you don't know based on the document.";
+      "Only use the provided excerpts to answer. If the answer isn't in the excerpts, say you don't know based on the document. " +
+      "Write in plain text only — never use LaTeX or math delimiters like $ ... $ or \\text{}. " +
+      "For chemical formulas or numeric subscripts, use plain unicode characters directly, e.g. write C2H2F4 as C₂H₂F₄, not \\text{C}_2\\text{H}_2\\text{F}_4$.";
 
     const res = await fetch(
       `${GEMINI_BASE}/models/${CHAT_MODEL}:generateContent?key=${apiKey}`,
