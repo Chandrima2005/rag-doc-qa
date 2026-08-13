@@ -316,11 +316,165 @@
     text-align: center;
     letter-spacing: 0.03em;
   }
+
+  /* ---------- Sidebar: The Ledger ---------- */
+
+  .sidebar-toggle {
+    position: fixed;
+    top: 18px;
+    left: 18px;
+    z-index: 30;
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    border: 1px solid var(--ink-border);
+    background: rgba(23,26,43,0.9);
+    backdrop-filter: blur(6px);
+    color: var(--paper);
+    font-size: 16px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: 268px;
+    height: 100vh;
+    background: rgba(16,18,28,0.92);
+    backdrop-filter: blur(8px);
+    border-right: 1px solid var(--ink-border);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    padding: 20px 14px;
+    overflow-y: auto;
+    transition: transform 0.25s ease;
+  }
+
+  .sidebar-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 4px 6px 16px;
+    border-bottom: 1px solid var(--ink-border);
+    margin-bottom: 14px;
+  }
+  .sidebar-title {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 500;
+    font-size: 1.05rem;
+    color: var(--brass-bright);
+  }
+
+  .btn-ghost {
+    font-family: var(--sans);
+    font-weight: 500;
+    font-size: 0.78rem;
+    color: var(--ink);
+    background: var(--brass);
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    white-space: nowrap;
+  }
+  .btn-ghost:hover { background: var(--brass-bright); }
+
+  .session-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+  }
+  .session-list:empty::before {
+    content: "No saved threads yet. Ask a question and it'll appear here.";
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 0.85rem;
+    color: var(--slate-dim);
+    padding: 8px 6px;
+    line-height: 1.5;
+  }
+
+  .session-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    border: 1px solid transparent;
+  }
+  .session-item:hover { background: var(--ink-3); }
+  .session-item.active {
+    background: rgba(217,164,65,0.08);
+    border-color: rgba(217,164,65,0.3);
+  }
+  .session-item .stitle {
+    flex: 1;
+    font-size: 0.83rem;
+    color: var(--slate);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .session-item.active .stitle { color: var(--paper); }
+  .session-item .sdate {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--slate-dim);
+    flex-shrink: 0;
+  }
+  .session-item .sdelete {
+    font-size: 12px;
+    color: var(--slate-dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease;
+  }
+  .session-item:hover .sdelete { opacity: 1; }
+  .sdelete:hover { color: var(--ember); }
+
+  @media (min-width: 881px) {
+    .wrap { margin-left: 268px; max-width: 760px; }
+  }
+
+  @media (max-width: 880px) {
+    .sidebar-toggle { display: flex; }
+    .sidebar {
+      transform: translateX(-100%);
+      box-shadow: 0 0 40px rgba(0,0,0,0.5);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .wrap { padding-top: 84px; }
+  }
 </style>
 </head>
 <body>
 
 <canvas id="constellation"></canvas>
+
+<button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle chat history">☰</button>
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-head">
+    <span class="sidebar-title">The Ledger</span>
+    <button class="btn-ghost" id="newChatBtn">+ New chat</button>
+  </div>
+  <div class="session-list" id="sessionList"></div>
+</aside>
 
 <div class="wrap">
 
@@ -351,8 +505,8 @@
     </div>
     <div id="chatLog"></div>
     <div class="chat-input-row">
-      <input id="questionInput" type="text" placeholder="Ask something only the document would know…" disabled />
-      <button class="btn" id="askBtn" disabled>Ask</button>
+      <input id="questionInput" type="text" placeholder="Ask something only the document would know…" />
+      <button class="btn" id="askBtn">Ask</button>
     </div>
   </div>
 
@@ -361,6 +515,122 @@
 </div>
 
 <script>
+  /* ---------------- Chat history: The Ledger ---------------- */
+  const STORAGE_KEY = "marginalia_sessions_v1";
+  const sidebar = document.getElementById("sidebar");
+  const sidebarToggle = document.getElementById("sidebarToggle");
+  const sessionListEl = document.getElementById("sessionList");
+  const newChatBtn = document.getElementById("newChatBtn");
+  const chatLogEl = document.getElementById("chatLog");
+
+  function loadSessions() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    } catch {
+      return [];
+    }
+  }
+  function saveSessions(list) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    } catch {
+      /* storage unavailable (e.g. private browsing) — fail silently */
+    }
+  }
+
+  let sessions = loadSessions();
+  let currentSessionId = null;
+
+  function newSession() {
+    const s = { id: String(Date.now()), title: null, createdAt: Date.now(), messages: [] };
+    sessions.unshift(s);
+    currentSessionId = s.id;
+    saveSessions(sessions);
+    renderSessionList();
+    chatLogEl.innerHTML = "";
+    return s;
+  }
+
+  function getCurrentSession() {
+    return sessions.find((s) => s.id === currentSessionId);
+  }
+
+  function persistCurrentSession() {
+    saveSessions(sessions);
+    renderSessionList();
+  }
+
+  function relativeDate(ts) {
+    const diff = Date.now() - ts;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "now";
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h`;
+    return `${Math.floor(hrs / 24)}d`;
+  }
+
+  function renderSessionList() {
+    sessionListEl.innerHTML = "";
+    sessions.forEach((s) => {
+      const item = document.createElement("div");
+      item.className = "session-item" + (s.id === currentSessionId ? " active" : "");
+      const title = document.createElement("div");
+      title.className = "stitle";
+      title.textContent = s.title || "New chat";
+      const date = document.createElement("div");
+      date.className = "sdate";
+      date.textContent = relativeDate(s.createdAt);
+      const del = document.createElement("button");
+      del.className = "sdelete";
+      del.textContent = "✕";
+      del.title = "Delete this thread";
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        sessions = sessions.filter((x) => x.id !== s.id);
+        saveSessions(sessions);
+        if (currentSessionId === s.id) {
+          if (sessions.length) {
+            switchToSession(sessions[0].id);
+          } else {
+            newSession();
+          }
+        }
+        renderSessionList();
+      });
+      item.appendChild(title);
+      item.appendChild(date);
+      item.appendChild(del);
+      item.addEventListener("click", () => switchToSession(s.id));
+      sessionListEl.appendChild(item);
+    });
+  }
+
+  function switchToSession(id) {
+    currentSessionId = id;
+    const s = getCurrentSession();
+    if (s) {
+      chatLogEl.innerHTML = "";
+      s.messages.forEach((m) => {
+        if (m.type === "q") {
+          renderUserEntry(m.text);
+        } else {
+          const el = renderBotEntry(m.text);
+          if (m.sources && m.sources.length) attachSourceChips(el, m.sources);
+        }
+      });
+    }
+    renderSessionList();
+    closeSidebarOnMobile();
+  }
+
+  function closeSidebarOnMobile() {
+    if (window.innerWidth <= 880) sidebar.classList.remove("open");
+  }
+
+  newChatBtn.addEventListener("click", () => newSession());
+  sidebarToggle.addEventListener("click", () => sidebar.classList.toggle("open"));
+
   (function () {
     const canvas = document.getElementById('constellation');
     const stateLabel = document.getElementById('constellationState');
@@ -546,7 +816,7 @@
     }
   });
 
-  function addUserEntry(text) {
+  function renderUserEntry(text) {
     const div = document.createElement("div");
     div.className = "entry-q";
     div.textContent = text;
@@ -555,7 +825,7 @@
     return div;
   }
 
-  function addBotEntry(text, pending) {
+  function renderBotEntry(text, pending) {
     const div = document.createElement("div");
     div.className = "entry-a" + (pending ? " pending" : "");
     div.textContent = text;
@@ -564,14 +834,36 @@
     return div;
   }
 
+  function attachSourceChips(entryEl, sources) {
+    const wrap = document.createElement("div");
+    wrap.className = "sources";
+    sources.forEach((s) => {
+      const chip = document.createElement("div");
+      chip.className = "source-chip";
+      chip.textContent = `${(s.score * 100).toFixed(0)}% match — "${s.excerpt.slice(0, 40)}…"`;
+      chip.title = s.excerpt;
+      attachTilt(chip);
+      wrap.appendChild(chip);
+    });
+    entryEl.appendChild(wrap);
+  }
+
   async function askQuestion() {
     const question = questionInput.value.trim();
     if (!question) return;
-    addUserEntry(question);
+
+    if (!currentSessionId || !getCurrentSession()) newSession();
+    const session = getCurrentSession();
+    if (!session.title) session.title = question.slice(0, 46);
+
+    renderUserEntry(question);
+    session.messages.push({ type: "q", text: question });
+    persistCurrentSession();
+
     questionInput.value = "";
     askBtn.disabled = true;
 
-    const pending = addBotEntry("Searching the margins…", true);
+    const pending = renderBotEntry("Searching the margins…", true);
 
     try {
       const res = await fetch("/api/chat", {
@@ -584,23 +876,15 @@
 
       pending.classList.remove("pending");
       pending.textContent = data.answer;
+      if (data.sources && data.sources.length) attachSourceChips(pending, data.sources);
 
-      if (data.sources && data.sources.length) {
-        const wrap = document.createElement("div");
-        wrap.className = "sources";
-        data.sources.forEach((s) => {
-          const chip = document.createElement("div");
-          chip.className = "source-chip";
-          chip.textContent = `${(s.score * 100).toFixed(0)}% match — "${s.excerpt.slice(0, 40)}…"`;
-          chip.title = s.excerpt;
-          attachTilt(chip);
-          wrap.appendChild(chip);
-        });
-        pending.appendChild(wrap);
-      }
+      session.messages.push({ type: "a", text: data.answer, sources: data.sources || [] });
+      persistCurrentSession();
     } catch (err) {
       pending.classList.remove("pending");
       pending.textContent = "Error: " + err.message;
+      session.messages.push({ type: "a", text: "Error: " + err.message, sources: [] });
+      persistCurrentSession();
     } finally {
       askBtn.disabled = false;
       questionInput.focus();
@@ -611,6 +895,13 @@
   questionInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") askQuestion();
   });
+
+  /* ---------------- Init: resume most recent thread or start fresh ---------------- */
+  if (sessions.length) {
+    switchToSession(sessions[0].id);
+  } else {
+    newSession();
+  }
 </script>
 </body>
 </html>
