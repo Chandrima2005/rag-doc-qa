@@ -3,147 +3,499 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>RAG Document Q&A</title>
+<title>Marginalia — RAG Document Q&A</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,560;0,9..144,680;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root {
-    --bg: #0f1115;
-    --panel: #171a21;
-    --border: #2a2e37;
-    --text: #e7e9ee;
-    --muted: #9aa1ad;
-    --accent: #6c8cff;
+    --ink: #10121c;
+    --ink-2: #171a2b;
+    --ink-3: #20243a;
+    --ink-border: #2b3049;
+    --paper: #f4ecdd;
+    --paper-dim: #e9dfc9;
+    --paper-ink: #241e13;
+    --brass: #d9a441;
+    --brass-bright: #f0c065;
+    --ember: #b5502f;
+    --sage: #7fbf8f;
+    --slate: #a3aec8;
+    --slate-dim: #626f8c;
+    --serif: 'Fraunces', Georgia, serif;
+    --sans: 'IBM Plex Sans', -apple-system, sans-serif;
+    --mono: 'IBM Plex Mono', 'Courier New', monospace;
   }
+
   * { box-sizing: border-box; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: var(--bg);
-    color: var(--text);
+    background: var(--ink);
+    background-image:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(217,164,65,0.10), transparent),
+      radial-gradient(ellipse 700px 500px at 100% 10%, rgba(217,164,65,0.05), transparent);
+    color: var(--slate);
+    font-family: var(--sans);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #constellation {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    pointer-events: auto;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 56px 24px 100px;
+  }
+
+  .eyebrow {
     display: flex;
-    justify-content: center;
-    padding: 40px 16px;
-  }
-  .app {
-    width: 100%;
-    max-width: 720px;
-  }
-  h1 {
-    font-size: 1.5rem;
-    margin-bottom: 4px;
-  }
-  p.sub {
-    color: var(--muted);
-    margin-top: 0;
-    margin-bottom: 28px;
-  }
-  .panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-  }
-  .panel h2 {
-    font-size: 1rem;
-    margin: 0 0 12px 0;
-    color: var(--muted);
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    color: var(--brass);
+    margin-bottom: 18px;
+    opacity: 0;
+    animation: rise 0.7s ease-out 0.05s forwards;
   }
+  .eyebrow::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--brass);
+    box-shadow: 0 0 10px 2px rgba(217,164,65,0.6);
+  }
+  .eyebrow .hl { color: var(--slate-dim); font-normal: normal; }
+
+  h1.wordmark {
+    font-family: var(--serif);
+    font-optical-sizing: auto;
+    font-weight: 560;
+    font-size: clamp(2.6rem, 6vw, 3.6rem);
+    line-height: 1.02;
+    color: var(--paper);
+    margin: 0 0 14px 0;
+    letter-spacing: -0.01em;
+    opacity: 0;
+    animation: rise 0.7s ease-out 0.15s forwards;
+  }
+  h1.wordmark em {
+    font-style: italic;
+    font-weight: 500;
+    color: var(--brass-bright);
+  }
+
+  p.lede {
+    font-size: 1.02rem;
+    line-height: 1.6;
+    color: var(--slate);
+    max-width: 46ch;
+    margin: 0 0 34px 0;
+    opacity: 0;
+    animation: rise 0.7s ease-out 0.25s forwards;
+  }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .block {
+    border: 1px solid var(--ink-border);
+    background: rgba(23,26,43,0.88);
+    backdrop-filter: blur(6px);
+    border-radius: 14px;
+    padding: 26px 26px 24px;
+    margin-bottom: 22px;
+  }
+
+  .block-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .block-numeral {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 500;
+    font-size: 1.15rem;
+    color: var(--brass);
+  }
+  .block-title {
+    font-family: var(--serif);
+    font-weight: 560;
+    font-size: 1.25rem;
+    color: var(--paper);
+    margin: 0;
+  }
+
+  .dropzone {
+    border: 1.5px dashed var(--ink-border);
+    border-radius: 10px;
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+  }
+  .dropzone.lit {
+    border-color: var(--brass);
+    box-shadow: 0 0 0 1px rgba(217,164,65,0.25), 0 0 34px rgba(217,164,65,0.14) inset;
+    background: rgba(217,164,65,0.04);
+  }
+
   input[type="file"] {
-    color: var(--text);
+    color: var(--slate);
+    font-family: var(--sans);
+    font-size: 0.88rem;
+    max-width: 100%;
   }
-  button {
-    background: var(--accent);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 10px 16px;
+  input[type="file"]::file-selector-button {
+    font-family: var(--sans);
+    font-weight: 500;
+    font-size: 0.85rem;
+    background: var(--ink-3);
+    color: var(--paper);
+    border: 1px solid var(--ink-border);
+    border-radius: 7px;
+    padding: 8px 14px;
+    margin-right: 12px;
     cursor: pointer;
-    font-size: 0.9rem;
-    margin-left: 10px;
+    transition: border-color 0.2s;
   }
-  button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  input[type="file"]::file-selector-button:hover {
+    border-color: var(--brass);
   }
-  #status { margin-top: 12px; font-size: 0.85rem; color: var(--muted); }
+
+  button.btn {
+    position: relative;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 0.88rem;
+    color: var(--ink);
+    background: var(--brass);
+    border: none;
+    border-radius: 7px;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.15s ease;
+    overflow: hidden;
+  }
+  button.btn:hover { background: var(--brass-bright); transform: translateY(-1px); }
+  button.btn:active { transform: translateY(0); }
+  button.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+  button.btn:focus-visible, input:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--brass-bright);
+    outline-offset: 2px;
+  }
+
+  #status {
+    margin-top: 14px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--slate-dim);
+  }
+  #status.ready { color: var(--sage); }
+  #status.error { color: var(--ember); }
+
   #chatLog {
-    max-height: 380px;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    margin-bottom: 14px;
+    gap: 16px;
+    margin-bottom: 18px;
   }
-  .msg {
-    padding: 10px 14px;
-    border-radius: 10px;
-    max-width: 85%;
-    line-height: 1.4;
-    font-size: 0.92rem;
-  }
-  .msg.user {
-    align-self: flex-end;
-    background: var(--accent);
-    color: white;
-  }
-  .msg.bot {
-    align-self: flex-start;
-    background: #1f232c;
-    border: 1px solid var(--border);
-  }
-  .chat-input {
-    display: flex;
-  }
-  .chat-input input {
-    flex: 1;
-    padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: #0f1115;
-    color: var(--text);
+  #chatLog:empty::before {
+    content: "No questions asked yet. Once your document is indexed, ask it anything — the answer will draw only from what's on the page.";
+    display: block;
     font-size: 0.9rem;
+    color: var(--slate-dim);
+    font-style: italic;
+    font-family: var(--serif);
+    padding: 6px 2px;
   }
+
+  .entry-q {
+    align-self: flex-end;
+    max-width: 88%;
+    background: var(--ink-3);
+    border: 1px solid var(--ink-border);
+    border-radius: 10px 10px 2px 10px;
+    padding: 10px 14px;
+    font-size: 0.92rem;
+    color: var(--paper);
+  }
+
+  .entry-a {
+    align-self: flex-start;
+    max-width: 92%;
+    background: var(--paper);
+    color: var(--paper-ink);
+    border-radius: 2px 10px 10px 10px;
+    border-left: 3px solid var(--brass);
+    padding: 14px 16px;
+    font-size: 0.94rem;
+    line-height: 1.55;
+    box-shadow: 0 8px 24px -12px rgba(0,0,0,0.5);
+  }
+  .entry-a.pending { color: var(--paper-ink); opacity: 0.6; font-style: italic; }
+
   .sources {
-    margin-top: 8px;
-    font-size: 0.75rem;
-    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 12px;
+    perspective: 500px;
+  }
+  .source-chip {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+    background: var(--paper-dim);
+    color: var(--paper-ink);
+    border: 1px solid rgba(36,30,19,0.14);
+    border-radius: 6px;
+    padding: 5px 9px;
+    cursor: default;
+    transition: box-shadow 0.15s ease, background 0.15s ease;
+    will-change: transform;
+  }
+  .source-chip:hover {
+    background: #fff;
+    box-shadow: 0 6px 16px -8px rgba(0,0,0,0.35);
+  }
+
+  .chat-input-row {
+    display: flex;
+    gap: 10px;
+  }
+  .chat-input-row input {
+    flex: 1;
+    background: var(--ink-3);
+    border: 1px solid var(--ink-border);
+    border-radius: 8px;
+    color: var(--paper);
+    font-family: var(--sans);
+    font-size: 0.92rem;
+    padding: 12px 14px;
+    transition: border-color 0.2s;
+  }
+  .chat-input-row input::placeholder { color: var(--slate-dim); }
+  .chat-input-row input:focus { border-color: var(--brass); outline: none; }
+  .chat-input-row input:disabled { opacity: 0.4; }
+
+  footer {
+    margin-top: 44px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--slate-dim);
+    text-align: center;
+    letter-spacing: 0.03em;
   }
 </style>
 </head>
 <body>
-<div class="app">
-  <h1>📄 RAG Document Q&A</h1>
-  <p class="sub">Upload a PDF, then ask questions about its contents.</p>
 
-  <div class="panel">
-    <h2>1. Upload document</h2>
-    <input type="file" id="fileInput" accept="application/pdf" />
-    <button id="uploadBtn">Process</button>
-    <div id="status"></div>
+<canvas id="constellation"></canvas>
+
+<div class="wrap">
+
+  <div class="eyebrow">Marginalia — a reading room for PDFs<span class="hl" id="constellationState"> · drifting, move your cursor</span></div>
+  <h1 class="wordmark">Ask the document,<br><em>not the internet.</em></h1>
+  <p class="lede">
+    Upload a PDF. It's split into passages, mapped into meaning-space, and only the
+    nearest ones are handed to the model when you ask something — so answers stay
+    grounded in the page, not guessed.
+  </p>
+
+  <div class="block">
+    <div class="block-head">
+      <span class="block-numeral">I.</span>
+      <h2 class="block-title">Place it on the shelf</h2>
+    </div>
+    <div class="dropzone" id="dropzone">
+      <input type="file" id="fileInput" accept="application/pdf" />
+      <button class="btn" id="uploadBtn">Upload</button>
+    </div>
+    <div id="status">Nothing indexed yet.</div>
   </div>
 
-  <div class="panel">
-    <h2>2. Ask questions</h2>
+  <div class="block">
+    <div class="block-head">
+      <span class="block-numeral">II.</span>
+      <h2 class="block-title">Write in the margin</h2>
+    </div>
     <div id="chatLog"></div>
-    <div class="chat-input">
-      <input id="questionInput" type="text" placeholder="Ask something about the document..." disabled />
-      <button id="askBtn" disabled>Send</button>
+    <div class="chat-input-row">
+      <input id="questionInput" type="text" placeholder="Ask something only the document would know…" disabled />
+      <button class="btn" id="askBtn" disabled>Ask</button>
     </div>
   </div>
+
+  <footer>built with retrieval-augmented generation · gemini · netlify blobs</footer>
+
 </div>
 
 <script>
+  (function () {
+    const canvas = document.getElementById('constellation');
+    const stateLabel = document.getElementById('constellationState');
+    const ctx = canvas.getContext('2d');
+    let W, H, dots = [];
+    const N = 46;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const N_DENSITY = 0.00009; // dots per CSS pixel-squared, scaled by viewport area
+
+    function resize() {
+      W = canvas.width = window.innerWidth * devicePixelRatio;
+      H = canvas.height = window.innerHeight * devicePixelRatio;
+    }
+
+    function init() {
+      resize();
+      const count = Math.max(40, Math.min(120, Math.round(window.innerWidth * window.innerHeight * N_DENSITY)));
+      dots = Array.from({ length: count }, () => ({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 0.10 * devicePixelRatio,
+        vy: (Math.random() - 0.5) * 0.10 * devicePixelRatio,
+        r: (Math.random() * 1.2 + 0.9) * devicePixelRatio,
+      }));
+    }
+
+    let mouse = { x: -9999, y: -9999, active: false };
+    window.addEventListener('mousemove', (e) => {
+      mouse.x = e.clientX * devicePixelRatio;
+      mouse.y = e.clientY * devicePixelRatio;
+      mouse.active = true;
+      stateLabel.textContent = '· nearest passages highlighting';
+    });
+    document.addEventListener('mouseleave', () => {
+      mouse.active = false;
+      stateLabel.textContent = '· drifting, move your cursor';
+    });
+
+    function step() {
+      ctx.clearRect(0, 0, W, H);
+
+      for (const d of dots) {
+        d.x += d.vx; d.y += d.vy;
+        if (d.x < 0 || d.x > W) d.vx *= -1;
+        if (d.y < 0 || d.y > H) d.vy *= -1;
+      }
+
+      ctx.lineWidth = 1 * devicePixelRatio;
+      for (let i = 0; i < dots.length; i++) {
+        for (let j = i + 1; j < dots.length; j++) {
+          const a = dots[i], b = dots[j];
+          const dist = Math.hypot(a.x - b.x, a.y - b.y);
+          if (dist < 110 * devicePixelRatio) {
+            ctx.strokeStyle = `rgba(163,174,200,${0.07 * (1 - dist / (110 * devicePixelRatio))})`;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      let nearest = [];
+      if (mouse.active) {
+        nearest = dots
+          .map((d, i) => ({ i, dist: Math.hypot(d.x - mouse.x, d.y - mouse.y) }))
+          .sort((a, b) => a.dist - b.dist)
+          .slice(0, 4)
+          .map(o => o.i);
+      }
+
+      dots.forEach((d, i) => {
+        const isNear = nearest.includes(i);
+        if (isNear) {
+          ctx.strokeStyle = 'rgba(217,164,65,0.45)';
+          ctx.lineWidth = 1 * devicePixelRatio;
+          ctx.beginPath();
+          ctx.moveTo(mouse.x, mouse.y);
+          ctx.lineTo(d.x, d.y);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, isNear ? d.r * 2.1 : d.r, 0, Math.PI * 2);
+        ctx.fillStyle = isNear ? '#f0c065' : 'rgba(163,174,200,0.55)';
+        ctx.shadowBlur = isNear ? 12 : 0;
+        ctx.shadowColor = 'rgba(240,192,101,0.8)';
+        ctx.fill();
+      });
+
+      if (mouse.active) {
+        ctx.beginPath();
+        ctx.arc(mouse.x, mouse.y, 3 * devicePixelRatio, 0, Math.PI * 2);
+        ctx.fillStyle = '#f4ecdd';
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = 'rgba(244,236,221,0.9)';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      if (!reduceMotion) requestAnimationFrame(step);
+    }
+
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(init, 200);
+    });
+    init();
+    step();
+  })();
+
+  function attachTilt(el) {
+    el.addEventListener('mousemove', (e) => {
+      const r = el.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width - 0.5;
+      const py = (e.clientY - r.top) / r.height - 0.5;
+      el.style.transform = `rotateX(${py * -10}deg) rotateY(${px * 10}deg) translateY(-2px)`;
+    });
+    el.addEventListener('mouseleave', () => { el.style.transform = ''; });
+  }
+
   pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
   const fileInput = document.getElementById("fileInput");
   const uploadBtn = document.getElementById("uploadBtn");
+  const dropzone = document.getElementById("dropzone");
   const statusEl = document.getElementById("status");
   const chatLog = document.getElementById("chatLog");
   const questionInput = document.getElementById("questionInput");
   const askBtn = document.getElementById("askBtn");
+
+  fileInput.addEventListener('change', () => {
+    dropzone.classList.toggle('lit', !!fileInput.files.length);
+  });
 
   async function extractPdfText(file) {
     const buffer = await file.arrayBuffer();
@@ -157,18 +509,23 @@
     return fullText;
   }
 
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    statusEl.className = kind || '';
+  }
+
   uploadBtn.addEventListener("click", async () => {
     const file = fileInput.files[0];
     if (!file) {
-      statusEl.textContent = "Please choose a PDF file first.";
+      setStatus("Choose a PDF before indexing.", "error");
       return;
     }
     uploadBtn.disabled = true;
-    statusEl.textContent = "Extracting text from PDF...";
+    setStatus("Reading the pages…");
 
     try {
       const text = await extractPdfText(file);
-      statusEl.textContent = "Embedding and indexing document...";
+      setStatus("Mapping passages into meaning-space…");
 
       const res = await fetch("/api/upload", {
         method: "POST",
@@ -176,22 +533,31 @@
         body: JSON.stringify({ text, filename: file.name }),
       });
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.error || "Upload failed");
 
-      statusEl.textContent = `Indexed "${data.filename}" into ${data.chunkCount} chunks. Ready to chat!`;
+      setStatus(`Indexed "${data.filename}" — ${data.chunkCount} passages ready.`, "ready");
       questionInput.disabled = false;
       askBtn.disabled = false;
+      questionInput.focus();
     } catch (err) {
-      statusEl.textContent = "Error: " + err.message;
+      setStatus("Error: " + err.message, "error");
     } finally {
       uploadBtn.disabled = false;
     }
   });
 
-  function addMessage(text, sender) {
+  function addUserEntry(text) {
     const div = document.createElement("div");
-    div.className = "msg " + sender;
+    div.className = "entry-q";
+    div.textContent = text;
+    chatLog.appendChild(div);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return div;
+  }
+
+  function addBotEntry(text, pending) {
+    const div = document.createElement("div");
+    div.className = "entry-a" + (pending ? " pending" : "");
     div.textContent = text;
     chatLog.appendChild(div);
     chatLog.scrollTop = chatLog.scrollHeight;
@@ -201,11 +567,11 @@
   async function askQuestion() {
     const question = questionInput.value.trim();
     if (!question) return;
-    addMessage(question, "user");
+    addUserEntry(question);
     questionInput.value = "";
     askBtn.disabled = true;
 
-    const thinking = addMessage("Thinking...", "bot");
+    const pending = addBotEntry("Searching the margins…", true);
 
     try {
       const res = await fetch("/api/chat", {
@@ -216,18 +582,28 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
 
-      thinking.textContent = data.answer;
+      pending.classList.remove("pending");
+      pending.textContent = data.answer;
+
       if (data.sources && data.sources.length) {
-        const src = document.createElement("div");
-        src.className = "sources";
-        src.textContent =
-          "Sources: " + data.sources.map((s) => `(${(s.score * 100).toFixed(0)}% match)`).join(", ");
-        thinking.appendChild(src);
+        const wrap = document.createElement("div");
+        wrap.className = "sources";
+        data.sources.forEach((s) => {
+          const chip = document.createElement("div");
+          chip.className = "source-chip";
+          chip.textContent = `${(s.score * 100).toFixed(0)}% match — "${s.excerpt.slice(0, 40)}…"`;
+          chip.title = s.excerpt;
+          attachTilt(chip);
+          wrap.appendChild(chip);
+        });
+        pending.appendChild(wrap);
       }
     } catch (err) {
-      thinking.textContent = "Error: " + err.message;
+      pending.classList.remove("pending");
+      pending.textContent = "Error: " + err.message;
     } finally {
       askBtn.disabled = false;
+      questionInput.focus();
     }
   }
 
