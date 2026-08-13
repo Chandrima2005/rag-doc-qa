@@ -493,7 +493,7 @@
     </div>
     <div class="dropzone" id="dropzone">
       <input type="file" id="fileInput" accept="application/pdf" />
-      <button class="btn" id="uploadBtn">Upload</button>
+      <button class="btn" id="uploadBtn">Index document</button>
     </div>
     <div id="status">Nothing indexed yet.</div>
   </div>
@@ -816,6 +816,27 @@
     }
   });
 
+  function formatAnswer(text) {
+    if (!text) return text;
+    let out = text;
+    // Unwrap $...$ math delimiters, keeping the inner content
+    out = out.replace(/\$([^$]+)\$/g, (m, inner) => inner);
+    // Unwrap \text{...} to its plain content
+    out = out.replace(/\\text\{([^}]*)\}/g, "$1");
+    // Convert _{n} or _n into real unicode subscript digits
+    const subMap = { 0:"₀",1:"₁",2:"₂",3:"₃",4:"₄",5:"₅",6:"₆",7:"₇",8:"₈",9:"₉" };
+    out = out.replace(/_\{?(\d+)\}?/g, (m, digits) =>
+      digits.split("").map((d) => subMap[d] || d).join("")
+    );
+    // Strip any remaining LaTeX-style backslash commands (e.g. \, \; \cdot)
+    out = out.replace(/\\[a-zA-Z]+/g, "");
+    // Clean up leftover braces from stripped commands
+    out = out.replace(/[{}]/g, "");
+    // Collapse extra whitespace left behind
+    out = out.replace(/[ \t]{2,}/g, " ").trim();
+    return out;
+  }
+
   function renderUserEntry(text) {
     const div = document.createElement("div");
     div.className = "entry-q";
@@ -875,10 +896,11 @@
       if (!res.ok) throw new Error(data.error || "Request failed");
 
       pending.classList.remove("pending");
-      pending.textContent = data.answer;
+      const cleanAnswer = formatAnswer(data.answer);
+      pending.textContent = cleanAnswer;
       if (data.sources && data.sources.length) attachSourceChips(pending, data.sources);
 
-      session.messages.push({ type: "a", text: data.answer, sources: data.sources || [] });
+      session.messages.push({ type: "a", text: cleanAnswer, sources: data.sources || [] });
       persistCurrentSession();
     } catch (err) {
       pending.classList.remove("pending");
