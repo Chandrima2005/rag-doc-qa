@@ -1,9 +1,14 @@
 {
   "name": "rag-doc-qa",
-  "version": "1.0.0",
-  "description": "RAG-based Document Q&A app using OpenAI embeddings + Netlify Blobs as a vector store",
+  "version": "2.0.0",
+  "description": "Ask questions about a PDF and get answers cited to the page. RAG with OpenRouter embeddings + chat, deployed on Vercel.",
   "private": true,
-  "dependencies": {
-    "@netlify/blobs": "^8.2.0"
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "local": "node dev-server.js",
+    "dev": "vercel dev"
   }
 }

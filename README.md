@@ -1,52 +1,91 @@
 # RAG Document Q&A
 
-Upload a PDF, ask questions about it, get answers grounded in the document — a full Retrieval-Augmented Generation pipeline deployed entirely on Netlify, powered by Google's free-tier Gemini API.
+Upload a PDF and ask questions about it. Answers come only from the document and cite the passages and page numbers they used.
 
 ## How it works
-1. **Client-side PDF parsing** — `pdf.js` extracts text from the uploaded PDF in the browser (no server-side file handling needed).
-2. **`/api/upload`** — chunks the text, embeds each chunk with Gemini's `text-embedding-004`, and stores the chunks + embeddings in **Netlify Blobs** (a built-in key-value store — no external vector DB required).
-3. **`/api/chat`** — embeds the user's question, computes cosine similarity against stored chunks, pulls the top 4 most relevant excerpts, and passes them as context to `gemini-2.0-flash` to generate a grounded answer.
+
+1. **Extract.** `pdf.js` reads the PDF in the browser, page by page.
+2. **Chunk.** Each page is split into ~220-word passages with a 40-word overlap. Every passage keeps its page number.
+3. **Embed.** Passages go to `/api/embed` in batches of 32. The function calls OpenRouter's embeddings endpoint (`openai/text-embedding-3-small` by default).
+4. **Store.** Vectors are normalized and saved in the browser's IndexedDB, grouped into chats. A chat can hold several documents (add more with **+** in the message box). Nothing is stored on the server.
+5. **Retrieve.** A question is embedded the same way and ranked against every passage in the chat's documents by cosine similarity, in the browser. The top 5 are kept.
+6. **Answer.** `/api/chat` sends those passages (plus the last few turns, for follow-up questions) to a chat model on OpenRouter. The model has to cite passages as `[n]`, and the UI turns those into links to the source text.
+
+```
+browser                                   Vercel functions        OpenRouter
+───────                                   ────────────────        ──────────
+PDF → pages → passages ──── texts ──────▶ /api/embed ───────────▶ embeddings
+IndexedDB ◀──────────────── vectors ─────
+question ───────────────── text ────────▶ /api/embed ───────────▶ embeddings
+top-k by cosine (in browser)
+top passages + question ─────────────────▶ /api/chat ───────────▶ chat model
+cited answer ◀───────────────────────────
+```
 
 ## Tech stack
-- Frontend: plain HTML/CSS/JS + pdf.js (via CDN)
-- Backend: Netlify Functions (serverless)
-- Vector store: Netlify Blobs
-- LLM: Google Gemini (embeddings + generation) — free tier, no card required
 
-## Setup
+- Frontend: plain HTML, CSS and JavaScript, plus pdf.js. No build step.
+- Backend: two Vercel serverless functions (Node 20+), with no dependencies.
+- Models: [OpenRouter](https://openrouter.ai). You can swap models with environment variables.
+- Vector store: IndexedDB in the browser.
 
-1. Install dependencies:
-   ```
-   npm install
-   ```
+## Project structure
 
-2. Get a free Gemini API key from **Google AI Studio**: https://aistudio.google.com/apikey
-   (No credit card required for the free tier — it comes with generous daily rate limits, plenty for a portfolio demo.)
+```
+api/
+  _lib/openrouter.js   OpenRouter client, request guards (not an endpoint)
+  embed.js             POST /api/embed
+  chat.js              POST /api/chat
+public/
+  index.html
+  styles.css
+  app.js               extraction, chunking, retrieval, UI
+vercel.json
+```
 
-3. Install the Netlify CLI (if you don't have it):
-   ```
-   npm install -g netlify-cli
-   ```
+## Environment variables
 
-4. Run locally:
-   ```
-   netlify dev
-   ```
-   Create a `.env` file in the project root:
-   ```
-   GEMINI_API_KEY=your-key-here
-   ```
+| Name | Required | Default | Notes |
+|---|---|---|---|
+| `OPENROUTER_API_KEY` | yes | | Server-side only, never sent to the browser |
+| `CHAT_MODEL` | no | `google/gemini-3.5-flash` | Any OpenRouter chat model ID |
+| `EMBED_MODEL` | no | `openai/text-embedding-3-small` | Any OpenRouter embeddings model ID. If you change it, documents indexed earlier need to be added again. |
+| `ALLOWED_ORIGINS` | recommended | (allow all) | Comma-separated, e.g. `https://yourdomain.com,https://www.yourdomain.com` |
+| `SITE_URL` | no | | Sent to OpenRouter as `HTTP-Referer` |
 
-5. Deploy:
-   ```
-   netlify deploy --prod
-   ```
-   Then set `GEMINI_API_KEY` in **Site settings → Environment variables** on Netlify's dashboard.
+## Run locally
 
-## Free tier notes
-Gemini's free tier (as of writing) covers both `text-embedding-004` and `gemini-2.0-flash` with per-minute and per-day request limits that are more than enough for demoing this project to recruiters or interviewers. Rate limits can change — check current limits at https://ai.google.dev/gemini-api/docs/rate-limits before relying on it for anything beyond a demo.
+Requires Node.js 20+.
 
-## Notes for your portfolio / resume
-- This is a **single-document demo** (each new upload replaces the previous one in the blob store) — call this out if asked, and mention how you'd extend it to multi-document support (e.g., keyed by document ID, a document picker UI).
-- Model names are constants in `netlify/functions/utils.js` and `chat.js` if you want to swap them later.
-- To extend: add conversation memory (pass prior Q&A turns into the prompt), support multiple file formats (docx, txt), or add a real vector DB (Pinecone/Supabase pgvector) if you want to demonstrate that instead of Netlify Blobs.
+```bash
+cp .env.example .env.local     # Windows: copy .env.example .env.local
+# open .env.local and paste your key after OPENROUTER_API_KEY=
+npm run local
+```
+
+Open http://localhost:3000. `.env.local` is git-ignored, so your key is never committed.
+
+(If you use the Vercel CLI, `vercel dev` works too.)
+
+## Deploy
+
+1. Import the GitHub repo at [vercel.com/new](https://vercel.com/new). Framework preset: **Other**. No build command.
+2. Add the environment variables above under **Settings → Environment Variables**, then redeploy.
+3. To use a custom domain, go to **Settings → Domains**, add your domain, and create the DNS records Vercel shows at your registrar.
+
+## Cost and abuse protection
+
+The API key lives only on the server. The endpoints have these guards:
+
+- input size limits (64 texts per embed call, 1,000-character questions, 8 excerpts per chat call)
+- `max_tokens` capped at 900 per answer
+- a per-IP rate limit for each server instance
+- an optional origin allow-list (`ALLOWED_ORIGINS`)
+
+A typical 50-page PDF costs a fraction of a cent to index with `text-embedding-3-small`. Each question costs well under a cent with the default chat model.
+
+## Limitations and next steps
+
+- Scanned PDFs without a text layer can't be read. Adding OCR (e.g. Tesseract.js) would fix that.
+- Retrieval is plain cosine similarity. Hybrid search (BM25 + vectors) or a reranker would help on keyword-heavy questions.
+- Libraries are stored per browser. Syncing them across devices would need accounts and a server-side vector store (e.g. Postgres + pgvector).
