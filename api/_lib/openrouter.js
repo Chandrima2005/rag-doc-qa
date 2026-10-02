@@ -76,15 +76,33 @@ export async function complete(messages, { maxTokens = 900, temperature = 0.2 } 
 // The API key belongs to the server, so these endpoints are the only thing
 // standing between the public internet and the key's credit balance.
 
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+// Accepts "https://site.com", "https://site.com/" or "site.com" and returns
+// the lowercase host ("site.com"), so small formatting differences in the
+// env var don't lock the site out.
+function hostOf(value) {
+  const v = String(value || "").trim().toLowerCase();
+  if (!v) return "";
+  try {
+    return new URL(v.includes("://") ? v : `https://${v}`).host;
+  } catch {
+    return "";
+  }
+}
+
+const ALLOWED_HOSTS = (process.env.ALLOWED_ORIGINS || "")
   .split(",")
-  .map((s) => s.trim())
+  .map(hostOf)
   .filter(Boolean);
 
+// Browsers always send an Origin header on POST requests. A request is allowed
+// when it comes from the same site that served the page (whichever domain that
+// is), or from an extra host listed in ALLOWED_ORIGINS. Pages on other
+// websites can't call the API.
 function originAllowed(req) {
-  if (ALLOWED_ORIGINS.length === 0) return true; // not configured: allow (local dev)
-  const origin = req.headers.origin || "";
-  return ALLOWED_ORIGINS.includes(origin);
+  const origin = hostOf(req.headers.origin);
+  if (!origin) return false;
+  const self = hostOf(req.headers["x-forwarded-host"] || req.headers.host);
+  return origin === self || ALLOWED_HOSTS.includes(origin);
 }
 
 // Best-effort, per-instance rate limit. Serverless instances are short-lived,
