@@ -1,19 +1,36 @@
-# RAG Document Q&A
+# Marginalia
 
-Upload a PDF and ask questions about it. Answers come only from the document and cite the passages and page numbers they used.
+**Ask the document, not the internet.**
+
+Marginalia lets you upload a PDF and ask questions about it. Every answer is drawn only from the document and cites the exact passages and page numbers it used, so you can check each claim against the source.
+
+**Live demo:** https://yourdomain.com
+
+---
+
+## Features
+
+- **Answers grounded in your document.** The model only sees the passages retrieved from your PDF and is instructed not to use outside knowledge.
+- **Page-level citations.** Every claim is marked `[1]`, `[2]`, … Hover a citation to preview the passage, or click it to open the full source.
+- **Multiple documents per chat.** Add more PDFs to the same conversation with the **+** button; answers can draw on all of them.
+- **Follow-up questions.** Recent turns are passed along, so you can ask "what about the second point?"
+- **Private by design.** Documents, embeddings and chat history stay in your browser (IndexedDB). Nothing is stored on the server.
+- **Chat history.** Past conversations are listed in the sidebar and survive a page reload.
 
 ## How it works
 
-1. **Extract.** `pdf.js` reads the PDF in the browser, page by page.
+Marginalia is a retrieval-augmented generation (RAG) pipeline where the retrieval half runs in the browser.
+
+1. **Extract.** `pdf.js` reads the PDF client-side, page by page.
 2. **Chunk.** Each page is split into ~220-word passages with a 40-word overlap. Every passage keeps its page number.
-3. **Embed.** Passages go to `/api/embed` in batches of 32. The function calls OpenRouter's embeddings endpoint (`openai/text-embedding-3-small` by default).
-4. **Store.** Vectors are normalized and saved in the browser's IndexedDB, grouped into chats. A chat can hold several documents (add more with **+** in the message box). Nothing is stored on the server.
-5. **Retrieve.** A question is embedded the same way and ranked against every passage in the chat's documents by cosine similarity, in the browser. The top 5 are kept.
-6. **Answer.** `/api/chat` sends those passages (plus the last few turns, for follow-up questions) to a chat model on OpenRouter. The model has to cite passages as `[n]`, and the UI turns those into links to the source text.
+3. **Embed.** Passages are sent in batches to a serverless function that calls an embeddings model (`openai/text-embedding-3-small` via OpenRouter).
+4. **Store.** The vectors are normalized and saved in IndexedDB, grouped by chat.
+5. **Retrieve.** A question is embedded the same way and compared against every passage in the chat by cosine similarity, in the browser. The top 5 passages are selected.
+6. **Answer.** The selected passages, the question and recent turns go to a chat model (Gemini 3.5 Flash via OpenRouter), which must cite passages by number. The UI turns those numbers into links to the source text.
 
 ```
-browser                                   Vercel functions        OpenRouter
-───────                                   ────────────────        ──────────
+browser                                   serverless functions    OpenRouter
+───────                                   ────────────────────    ──────────
 PDF → pages → passages ──── texts ──────▶ /api/embed ───────────▶ embeddings
 IndexedDB ◀──────────────── vectors ─────
 question ───────────────── text ────────▶ /api/embed ───────────▶ embeddings
@@ -22,70 +39,62 @@ top passages + question ─────────────────▶ /
 cited answer ◀───────────────────────────
 ```
 
+### Why retrieval runs in the browser
+
+- **Privacy:** the server never keeps a copy of anyone's document.
+- **No database to run:** each visitor's index lives in their own browser.
+- **Isolation:** users can't see or overwrite each other's documents.
+
 ## Tech stack
 
-- Frontend: plain HTML, CSS and JavaScript, plus pdf.js. No build step.
-- Backend: two Vercel serverless functions (Node 20+), with no dependencies.
-- Models: [OpenRouter](https://openrouter.ai). You can swap models with environment variables.
-- Vector store: IndexedDB in the browser.
+| Layer | Choice |
+|---|---|
+| Frontend | HTML, CSS, vanilla JavaScript (no framework, no build step) |
+| PDF parsing | pdf.js |
+| Vector store | IndexedDB in the browser |
+| Backend | Two Node.js serverless functions on Vercel |
+| Models | OpenRouter: `openai/text-embedding-3-small`, `google/gemini-3.5-flash` |
+
+## Security
+
+The API key lives only in server environment variables and is never sent to the browser. The API endpoints also have:
+
+- input size limits on every request
+- a cap on answer length
+- per-IP rate limiting
+- an optional allow-list of origins, so only this site can call the API
+- HTML escaping of model output before it's rendered
 
 ## Project structure
 
 ```
 api/
-  _lib/openrouter.js   OpenRouter client, request guards (not an endpoint)
-  embed.js             POST /api/embed
-  chat.js              POST /api/chat
+  _lib/openrouter.js   OpenRouter client and request guards
+  embed.js             POST /api/embed  – embeds passages and questions
+  chat.js              POST /api/chat   – generates the cited answer
 public/
   index.html
   styles.css
-  app.js               extraction, chunking, retrieval, UI
-vercel.json
+  app.js               extraction, chunking, retrieval, chat UI
+dev-server.js          local development server
 ```
 
-## Environment variables
+## Running locally
 
-| Name | Required | Default | Notes |
-|---|---|---|---|
-| `OPENROUTER_API_KEY` | yes | | Server-side only, never sent to the browser |
-| `CHAT_MODEL` | no | `google/gemini-3.5-flash` | Any OpenRouter chat model ID |
-| `EMBED_MODEL` | no | `openai/text-embedding-3-small` | Any OpenRouter embeddings model ID. If you change it, documents indexed earlier need to be added again. |
-| `ALLOWED_ORIGINS` | recommended | (allow all) | Comma-separated, e.g. `https://yourdomain.com,https://www.yourdomain.com` |
-| `SITE_URL` | no | | Sent to OpenRouter as `HTTP-Referer` |
-
-## Run locally
-
-Requires Node.js 20+.
+Requires Node.js 20+ and an [OpenRouter](https://openrouter.ai) API key.
 
 ```bash
-cp .env.example .env.local     # Windows: copy .env.example .env.local
-# open .env.local and paste your key after OPENROUTER_API_KEY=
+git clone https://github.com/Chandrima2005/rag-doc-qa.git
+cd rag-doc-qa
+cp .env.example .env.local        # Windows: copy .env.example .env.local
+# add your key: OPENROUTER_API_KEY=...
 npm run local
 ```
 
-Open http://localhost:3000. `.env.local` is git-ignored, so your key is never committed.
+Then open http://localhost:3000.
 
-(If you use the Vercel CLI, `vercel dev` works too.)
+## Limitations and future work
 
-## Deploy
-
-1. Import the GitHub repo at [vercel.com/new](https://vercel.com/new). Framework preset: **Other**. No build command.
-2. Add the environment variables above under **Settings → Environment Variables**, then redeploy.
-3. To use a custom domain, go to **Settings → Domains**, add your domain, and create the DNS records Vercel shows at your registrar.
-
-## Cost and abuse protection
-
-The API key lives only on the server. The endpoints have these guards:
-
-- input size limits (64 texts per embed call, 1,000-character questions, 8 excerpts per chat call)
-- `max_tokens` capped at 900 per answer
-- a per-IP rate limit for each server instance
-- an optional origin allow-list (`ALLOWED_ORIGINS`)
-
-A typical 50-page PDF costs a fraction of a cent to index with `text-embedding-3-small`. Each question costs well under a cent with the default chat model.
-
-## Limitations and next steps
-
-- Scanned PDFs without a text layer can't be read. Adding OCR (e.g. Tesseract.js) would fix that.
-- Retrieval is plain cosine similarity. Hybrid search (BM25 + vectors) or a reranker would help on keyword-heavy questions.
-- Libraries are stored per browser. Syncing them across devices would need accounts and a server-side vector store (e.g. Postgres + pgvector).
+- **Scanned PDFs** without a text layer can't be read yet. OCR (e.g. Tesseract.js) would add support.
+- **Retrieval** is pure vector similarity. Hybrid search (BM25 + vectors) or a reranker would improve keyword-heavy questions.
+- **Per-browser storage** means chats don't sync across devices. That would need accounts and a server-side vector store, which conflicts with the privacy goal.
